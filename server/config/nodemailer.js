@@ -10,7 +10,16 @@ const transporter = nodemailer.createTransport({
     auth:{
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
-    } 
+    },
+    // Fail fast instead of hanging if the SMTP server is unreachable / port blocked.
+    connectionTimeout: 10000, // 10s to establish the TCP connection
+    greetingTimeout: 10000,   // 10s to receive the SMTP greeting
+    socketTimeout: 15000,     // 15s of inactivity before giving up
 })
+
+// Log SMTP readiness on startup so mail problems are visible immediately.
+transporter.verify()
+    .then(() => console.log('SMTP transporter ready'))
+    .catch(err => console.error('SMTP transporter NOT ready:', err.message))
 
 export default transporter

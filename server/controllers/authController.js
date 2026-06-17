@@ -53,10 +53,15 @@ export const register = async(req, res)=>{
             subject: 'Welcome to ZARB',
             text: `Welcome to ZARB, your account has been created with ${email}`
         }
-        // This will send the email
-        await transporter.sendMail(mailOptions)
+        // Respond immediately — the account is already created above.
+        // The welcome email is best‑effort and must NOT block or fail signup.
+        res.json({success:true})
 
-        return res.json({success:true})
+        // Fire‑and‑forget: send the welcome email in the background so a slow or
+        // misconfigured SMTP server can never hang the registration request.
+        transporter.sendMail(mailOptions)
+            .catch(err => console.error('Welcome email failed:', err.message))
+        return
     }
     catch(error){
         res.json({success:false, message: error.message})
@@ -81,7 +86,7 @@ export const login = async(req,res)=>{
         // Getting password and comparing it from that stored in database
         const isMatch = await bcrypt.compare(password, user.password) 
         if(!isMatch){
-            return res.json({success: false, messgae: 'Invalid Password'})
+            return res.json({success: false, message: 'Invalid Password'})
         }
         // Generating token if both email and password are correct
         const token = jwt.sign({id: user._id}, process.env.JWT_SECRET, {expiresIn: '7d'})
@@ -206,7 +211,7 @@ export const sendResetOtp = async (req,res)=>{
         const OTP = String(Math.floor(100000 + Math.random() * 900000))
 
         // Saving the OTP in databse
-        user.verifyOtp = OTP
+        user.resetOtp = OTP
         user.resetOtpExpireAt = Date.now() + 15 * 60 *1000
         await user.save()
 
@@ -253,7 +258,7 @@ export const resetPassword = async (req,res)=>{
         user.resetOtpExpireAt = 0
 
         await user.save()
-        return res.json({success:false, message: 'Password has been reset successfully'})
+        return res.json({success:true, message: 'Password has been reset successfully'})
 
 
     } catch (error) {
