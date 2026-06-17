@@ -126,9 +126,12 @@ export const sendVerifyOtp = async (req,res)=>{
     try {
         const {userId} = req.body
         const user = await userModel.findById(userId)
-        // Checking if account is verified
+        if(!user){
+            return res.json({success: false, message: 'User not found'})
+        }
+        // Checking if account is verified (boolean false, not the string 'false')
         if(user.isAccountVerified){
-            return res.json({success: 'false', message: 'Account Already Verified'})
+            return res.json({success: false, message: 'Account Already Verified'})
         }
         // Generating the OTP
         const OTP = String(Math.floor(100000 + Math.random() * 900000))
@@ -138,17 +141,20 @@ export const sendVerifyOtp = async (req,res)=>{
         user.verifyOtpExpireAt = Date.now() + 24 * 60 * 60 *1000
         await user.save()
 
-        // Sending OTP to user through email
+        // Respond as soon as the OTP is saved so the UI can move to the entry page.
+        // Delivering the email is best‑effort and must NOT block or fail navigation.
+        res.json({success: true, message: "Verification OTP sent on email"})
+
+        // Fire‑and‑forget: send the OTP email in the background.
         const mailOption = {
             from: process.env.SENDER_EMAIL,
             to: user.email,
             subject: 'Account Verification OTP',
-            // text: `Your OTP is ${OTP}. Verify your account using this OTP.`,
             html: EMAIL_VERIFY_TEMPLATE.replace("{{otp}}", OTP).replace("{{email}}",user.email)
         }
-        await transporter.sendMail(mailOption)
-
-        return res.json({success: true, message: "Verification OTP sent on email"})
+        transporter.sendMail(mailOption)
+            .catch(err => console.error('Verify OTP email failed:', err.message))
+        return
 
     } catch (error) {
         return res.json({success: false, message:error.message})
