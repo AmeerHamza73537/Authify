@@ -1,25 +1,56 @@
-// This file is to send emails to users who login
+// Sends transactional email through Brevo's HTTP API (https://api.brevo.com).
+//
+// We deliberately do NOT use SMTP here. Cloud hosts such as Railway block
+// outbound SMTP ports (25 / 465 / 587), which caused "Connection timeout"
+// errors. The HTTP API runs over HTTPS (port 443) and is never blocked.
+//
+// The export keeps the same shape the controllers already use
+// (`transporter.sendMail({ from, to, subject, text, html })`) so no call
+// sites need to change.
 
-import nodemailer from 'nodemailer'
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
 
-// Creates a transporter object using nodemailer.createTransport(), which sets up the connection to the SMTP server (smtp-relay.brevo.com on port 587).
-const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    // Uses authentication credentials (user and pass) from environment variables for security.
-    auth:{
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-    // Fail fast instead of hanging if the SMTP server is unreachable / port blocked.
-    connectionTimeout: 10000, // 10s to establish the TCP connection
-    greetingTimeout: 10000,   // 10s to receive the SMTP greeting
-    socketTimeout: 15000,     // 15s of inactivity before giving up
-})
+const sendMail = async ({ from, to, subject, text, html }) => {
+    const apiKey = process.env.BREVO_API_KEY
+    if (!apiKey) {
+        throw new Error('BREVO_API_KEY is not set — add it in your Railway env vars')
+    }
 
-// Log SMTP readiness on startup so mail problems are visible immediately.
-transporter.verify()
-    .then(() => console.log('SMTP transporter ready'))
-    .catch(err => console.error('SMTP transporter NOT ready:', err.message))
+    // Map nodemailer-style options onto the Brevo API payload.
+    const payload = {
+        sender: { email: from, name: 'ZARB' },
+        to: [{ email: to }],
+        subject,
+    }
+    if (html) payload.htmlContent = html
+    if (text) payload.textContent = text
+
+    const response = await fetch(BREVO_API_URL, {
+        method: 'POST',
+        headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+        // Surface Brevo's error body (e.g. unverified sender, invalid key).
+        const errBody = await response.text()
+        throw new Error(`Brevo API ${response.status}: ${errBody}`)
+    }
+
+    return response.json()
+}
+
+// Warn loudly at startup if the key is missing, so misconfiguration is obvious.
+if (!process.env.BREVO_API_KEY) {
+    console.error('⚠️  BREVO_API_KEY is not set — outgoing email will fail')
+} else {
+    console.log('Brevo HTTP email API configured')
+}
+
+const transporter = { sendMail }
 
 export default transporter
